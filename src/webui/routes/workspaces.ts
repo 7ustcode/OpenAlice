@@ -784,7 +784,12 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
 
     try {
       const result = agent === 'claude'
-        ? await probeAnthropic({ baseUrl, apiKey, model })
+        ? await probeAnthropic({
+            baseUrl,
+            apiKey,
+            model,
+            authMode: body?.authMode === 'bearer' ? 'bearer' : 'x-api-key',
+          })
         : await probeOpenAI({
             baseUrl,
             apiKey,
@@ -816,12 +821,15 @@ interface AgentConfigInput {
   apiKey?: string;
   model?: string;
   wireApi?: 'chat' | 'responses';
+  /** Claude only — which header carries the key (see ClaudeProbeInput). */
+  authMode?: 'x-api-key' | 'bearer';
 }
 
 interface ClaudeConfigShape {
   baseUrl: string | null;
   apiKey: string | null;
   model: string | null;
+  authMode: 'x-api-key' | 'bearer';
 }
 
 interface CodexConfigShape {
@@ -848,10 +856,16 @@ async function readClaudeConfig(workspaceDir: string): Promise<ClaudeConfigShape
   }
   const env = (parsed['env'] ?? {}) as Record<string, unknown>;
   const baseUrl = typeof env['ANTHROPIC_BASE_URL'] === 'string' ? (env['ANTHROPIC_BASE_URL'] as string) : null;
-  const apiKey = typeof env['ANTHROPIC_API_KEY'] === 'string' ? (env['ANTHROPIC_API_KEY'] as string) : null;
+  // The key lives in exactly one of two env vars depending on auth mode:
+  // ANTHROPIC_API_KEY → x-api-key header, ANTHROPIC_AUTH_TOKEN → Bearer.
+  // Which one is present tells us the mode to surface back to the modal.
+  const xApiKey = typeof env['ANTHROPIC_API_KEY'] === 'string' ? (env['ANTHROPIC_API_KEY'] as string) : null;
+  const authToken = typeof env['ANTHROPIC_AUTH_TOKEN'] === 'string' ? (env['ANTHROPIC_AUTH_TOKEN'] as string) : null;
+  const authMode: 'x-api-key' | 'bearer' = authToken !== null ? 'bearer' : 'x-api-key';
+  const apiKey = authToken ?? xApiKey;
   const model = typeof parsed['model'] === 'string' ? (parsed['model'] as string) : null;
   if (baseUrl === null && apiKey === null && model === null) return null;
-  return { baseUrl, apiKey, model };
+  return { baseUrl, apiKey, model, authMode };
 }
 
 async function writeClaudeConfig(workspaceDir: string, cfg: AgentConfigInput): Promise<void> {
@@ -867,7 +881,15 @@ async function writeClaudeConfig(workspaceDir: string, cfg: AgentConfigInput): P
   const out: Record<string, unknown> = {};
   const env: Record<string, string> = {};
   if (cfg.baseUrl) env['ANTHROPIC_BASE_URL'] = cfg.baseUrl;
-  if (cfg.apiKey) env['ANTHROPIC_API_KEY'] = cfg.apiKey;
+  // Write the key into exactly one env var. Bearer-mode gateways (MiniMax
+  // international, proxy front-ends) read ANTHROPIC_AUTH_TOKEN → the CLI sends
+  // `Authorization: Bearer`. Default x-api-key mode uses ANTHROPIC_API_KEY.
+  // Never write both: Claude Code warns on dual-set, and the two headers
+  // together can be rejected as ambiguous auth.
+  if (cfg.apiKey) {
+    if (cfg.authMode === 'bearer') env['ANTHROPIC_AUTH_TOKEN'] = cfg.apiKey;
+    else env['ANTHROPIC_API_KEY'] = cfg.apiKey;
+  }
   if (Object.keys(env).length > 0) out['env'] = env;
   if (cfg.model) out['model'] = cfg.model;
   await writeWorkspaceFile(workspaceDir, CLAUDE_SETTINGS_PATH, JSON.stringify(out, null, 2) + '\n');
