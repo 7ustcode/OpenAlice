@@ -83,7 +83,7 @@ export async function removeNotificationsLog(
 
 export const migration: Migration = {
   id: '0007_retire_legacy_chat',
-  appVersion: '0.21.0-beta.6',
+  appVersion: '0.30.0-beta.1',
   introducedAt: '2026-05-31',
   affects: ['connectors.json', 'sessions/notifications.jsonl'],
   summary:
