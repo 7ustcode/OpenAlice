@@ -15,6 +15,8 @@ import { cliBinPath } from '@/core/paths.js';
 
 import { claudeAdapter } from './adapters/claude.js';
 import { codexAdapter } from './adapters/codex.js';
+import { opencodeAdapter } from './adapters/opencode.js';
+import { piAdapter } from './adapters/pi.js';
 import { shellAdapter } from './adapters/shell.js';
 import { AdapterRegistry, type CliAdapter } from './cli-adapter.js';
 import { loadConfig, type ServerConfig } from './config.js';
@@ -154,6 +156,8 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
   const adapters = new AdapterRegistry();
   adapters.register(claudeAdapter, { default: true });
   adapters.register(codexAdapter);
+  adapters.register(opencodeAdapter);
+  adapters.register(piAdapter);
   adapters.register(shellAdapter);
 
   const creator = new WorkspaceCreator({
@@ -349,6 +353,8 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
     const agentOverride = {
       claude: existsSync(join(w.dir, '.claude', 'settings.local.json')),
       codex: existsSync(join(w.dir, '.codex')),
+      opencode: existsSync(join(w.dir, 'opencode.json')),
+      pi: existsSync(join(w.dir, '.pi-agent')),
     };
     // Version lineage + upgrade hint. We read the instance README's
     // frontmatter for the "current" version each list call — cheap (one

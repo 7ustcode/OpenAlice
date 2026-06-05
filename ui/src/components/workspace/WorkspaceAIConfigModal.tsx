@@ -28,7 +28,9 @@ interface Props {
 const inputClass =
   'w-full bg-bg-secondary border border-border rounded-md px-3 py-2 text-[13px] text-text placeholder:text-text-muted/60 focus:outline-none focus:border-accent'
 
-type Tab = 'claude' | 'codex'
+type Tab = 'claude' | 'codex' | 'opencode' | 'pi'
+
+const TAB_LABEL: Record<Tab, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'opencode', pi: 'Pi' }
 
 interface FormState {
   baseUrl: string
@@ -70,7 +72,11 @@ function formToConfig(form: FormState, agent: AgentId): AgentConfig {
   if (agent === 'codex') {
     return { ...cfg, wireApi: form.wireApi }
   }
-  return { ...cfg, authMode: form.authMode }
+  if (agent === 'claude') {
+    return { ...cfg, authMode: form.authMode }
+  }
+  // opencode: plain baseUrl/apiKey/model — no wireApi, no authMode.
+  return cfg
 }
 
 // Test result is per-tab so switching tabs doesn't lose the other agent's
@@ -100,6 +106,8 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
   const [bundle, setBundle] = useState<AgentConfigBundle | null>(null)
   const [claudeForm, setClaudeForm] = useState<FormState>(EMPTY_FORM)
   const [codexForm, setCodexForm] = useState<FormState>(EMPTY_FORM)
+  const [opencodeForm, setOpencodeForm] = useState<FormState>(EMPTY_FORM)
+  const [piForm, setPiForm] = useState<FormState>(EMPTY_FORM)
   const [pickedProfile, setPickedProfile] = useState<string>('')
   const [showKey, setShowKey] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -108,6 +116,8 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
   const [testing, setTesting] = useState(false)
   const [claudeResult, setClaudeResult] = useState<TestResult | null>(null)
   const [codexResult, setCodexResult] = useState<TestResult | null>(null)
+  const [opencodeResult, setOpencodeResult] = useState<TestResult | null>(null)
+  const [piResult, setPiResult] = useState<TestResult | null>(null)
 
   useEffect(() => {
     void Promise.all([listAgentProfiles(), getAgentConfig(wsId)])
@@ -116,19 +126,21 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
         setBundle(b)
         setClaudeForm(configToForm(b.claude))
         setCodexForm(configToForm(b.codex))
+        setOpencodeForm(configToForm(b.opencode))
+        setPiForm(configToForm(b.pi))
       })
       .catch((err: Error) => setError(err.message))
   }, [wsId])
 
-  const form = tab === 'claude' ? claudeForm : codexForm
-  const setForm = tab === 'claude' ? setClaudeForm : setCodexForm
-  const result = tab === 'claude' ? claudeResult : codexResult
-  const setResult = tab === 'claude' ? setClaudeResult : setCodexResult
+  const form = { claude: claudeForm, codex: codexForm, opencode: opencodeForm, pi: piForm }[tab]
+  const setForm = { claude: setClaudeForm, codex: setCodexForm, opencode: setOpencodeForm, pi: setPiForm }[tab]
+  const result = { claude: claudeResult, codex: codexResult, opencode: opencodeResult, pi: piResult }[tab]
+  const setResult = { claude: setClaudeResult, codex: setCodexResult, opencode: setOpencodeResult, pi: setPiResult }[tab]
   const resultMatchesCurrent = !!result && formsMatch(result.snapshot, form, tab)
   const testPassedForCurrent = result?.kind === 'pass' && resultMatchesCurrent
   const dirty = useMemo(() => {
     if (!bundle) return false
-    const saved = tab === 'claude' ? bundle.claude : bundle.codex
+    const saved = bundle[tab]
     const savedForm = configToForm(saved)
     return (
       savedForm.baseUrl !== form.baseUrl ||
@@ -176,8 +188,7 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
       await saveAgentConfig(wsId, tab, { baseUrl: null, apiKey: null, model: null })
       const fresh = await getAgentConfig(wsId)
       setBundle(fresh)
-      if (tab === 'claude') setClaudeForm(EMPTY_FORM)
-      else setCodexForm(EMPTY_FORM)
+      setForm(EMPTY_FORM)
       setSavedFlash(true)
       setTimeout(() => setSavedFlash(false), 1800)
     } catch (err) {
@@ -252,7 +263,7 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
 
         {/* Tabs */}
         <div className="flex border-b border-border bg-bg-secondary/50">
-          {(['claude', 'codex'] as const).map((id) => (
+          {(['claude', 'codex', 'opencode', 'pi'] as const).map((id) => (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -262,7 +273,7 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
                   : 'text-text-muted hover:text-text'
               }`}
             >
-              {id === 'claude' ? 'Claude Code' : 'Codex'}
+              {TAB_LABEL[id]}
             </button>
           ))}
         </div>
@@ -303,7 +314,13 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
             <input
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-              placeholder={tab === 'claude' ? 'https://api.anthropic.com (default)' : 'https://api.openai.com/v1 (default)'}
+              placeholder={
+                tab === 'claude'
+                  ? 'https://api.anthropic.com (default)'
+                  : tab === 'opencode' || tab === 'pi'
+                  ? 'https://api.deepseek.com/v1'
+                  : 'https://api.openai.com/v1 (default)'
+              }
               className={inputClass}
               spellCheck={false}
               autoCapitalize="off"
@@ -363,7 +380,7 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
             <input
               value={form.model}
               onChange={(e) => setForm({ ...form, model: e.target.value })}
-              placeholder={tab === 'claude' ? 'claude-sonnet-4-6' : 'gpt-4o'}
+              placeholder={tab === 'claude' ? 'claude-sonnet-4-6' : tab === 'opencode' || tab === 'pi' ? 'deepseek-chat' : 'gpt-4o'}
               className={inputClass}
               spellCheck={false}
               autoCapitalize="off"
@@ -386,6 +403,33 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
             </div>
           )}
 
+          {tab === 'opencode' && (
+            <div className="rounded-md border border-border bg-bg-secondary/50 px-3 py-2.5">
+              <p className="text-[12px] text-text-muted leading-relaxed">
+                <strong className="text-text">Speaks OpenAI Chat Completions</strong> (via{' '}
+                <code className="font-mono text-[11.5px]">@ai-sdk/openai-compatible</code>), so it
+                connects <strong className="text-text">directly</strong> to Chat-only providers —
+                DeepSeek, Qwen, Moonshot/Kimi, GLM, MiniMax — and local runtimes (Ollama, vLLM,
+                LM Studio). No translation proxy needed. Base URL is the provider's
+                OpenAI-compatible endpoint; Model is the bare model id.
+              </p>
+            </div>
+          )}
+
+          {tab === 'pi' && (
+            <div className="rounded-md border border-border bg-bg-secondary/50 px-3 py-2.5">
+              <p className="text-[12px] text-text-muted leading-relaxed">
+                <strong className="text-text">OpenAI Chat Completions wire</strong> — connects
+                directly to DeepSeek, Qwen, Kimi, GLM, MiniMax and local runtimes; Base URL is the
+                provider's OpenAI-compatible endpoint, Model is the bare model id. Written to a
+                per-workspace <code className="font-mono text-[11.5px]">.pi-agent/models.json</code>.
+                Trading tools reach Pi through the <code className="font-mono text-[11.5px]">alice</code>{' '}
+                CLI on PATH (the <code className="font-mono text-[11.5px]">openalice-cli</code> skill),
+                not MCP — Pi has no native MCP.
+              </p>
+            </div>
+          )}
+
           {error && (
             <div className="rounded-md border border-red/40 bg-red/10 text-red text-[12px] px-3 py-2">
               {error}
@@ -404,7 +448,7 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
           {!testing && result?.kind === 'pass' && resultMatchesCurrent && (
             <div className="rounded-md border border-green/40 bg-green/10 text-green text-[12px] px-3 py-2">
               <div className="font-medium mb-0.5">
-                Test passed — {tab === 'claude' ? 'Anthropic' : 'OpenAI'} replied:
+                Test passed — {tab === 'claude' ? 'Anthropic' : tab === 'opencode' || tab === 'pi' ? 'the provider' : 'OpenAI'} replied:
               </div>
               <div className="text-text whitespace-pre-wrap break-words font-mono text-[11.5px]">
                 {result.message || '(empty reply)'}
@@ -431,6 +475,8 @@ export function WorkspaceAIConfigModal({ wsId, onClose }: Props) {
             any open session to re-load.
             {tab === 'claude' && ' Claude reads `.claude/settings.local.json` from the workspace cwd.'}
             {tab === 'codex' && ' Codex reads `.codex/config.toml` + `.codex/env.json` (via CODEX_HOME).'}
+            {tab === 'opencode' && ' opencode reads `opencode.json` from the workspace cwd; OpenAlice injects its MCP servers at spawn.'}
+            {tab === 'pi' && ' Pi reads `.pi-agent/models.json` (via PI_CODING_AGENT_DIR); tools reach it via the `alice` CLI on PATH.'}
           </p>
         </div>
 

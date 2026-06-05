@@ -114,6 +114,16 @@ describe('injectWorkspaceContext — MCP', () => {
   it('does not write .mcp.json when injectMcp is false', async () => {
     await injectWorkspaceContext({ template: makeTemplate({ injectMcp: false }), wsId: 'ws-abc', dir });
     expect(existsSync(join(dir, '.mcp.json'))).toBe(false);
+    // No tools injected → no Pi bridge either.
+    expect(existsSync(join(dir, '.pi/extensions/openalice-bridge.ts'))).toBe(false);
+  });
+
+  it('writes the Pi MCP bridge extension when injecting MCP (Pi has no native MCP)', async () => {
+    await injectWorkspaceContext({ template: makeTemplate({ injectMcp: true }), wsId: 'ws-abc', dir });
+    const bridge = await read('.pi/extensions/openalice-bridge.ts');
+    expect(bridge).toContain('openalice-bridge');
+    expect(bridge).toContain('registerTool');
+    expect(bridge).toContain('OPENALICE_MCP_URL');
   });
 });
 
@@ -146,14 +156,15 @@ describe('injectWorkspaceContext — persona', () => {
 });
 
 describe('injectWorkspaceContext — skills', () => {
-  it('copies a bundled skill into both discovery paths', async () => {
+  it('copies a bundled skill into all three CLI discovery paths', async () => {
     await injectWorkspaceContext({
       template: makeTemplate({ bundledSkills: ['scan-value-chain'] }),
       wsId: 'ws-abc',
       dir,
     });
     const expected = await readFile(defaultPath('skills', 'scan-value-chain', 'SKILL.md'), 'utf8');
-    expect(await read('.claude/skills/scan-value-chain/SKILL.md')).toBe(expected);
-    expect(await read('.agents/skills/scan-value-chain/SKILL.md')).toBe(expected);
+    expect(await read('.claude/skills/scan-value-chain/SKILL.md')).toBe(expected);  // Claude Code
+    expect(await read('.agents/skills/scan-value-chain/SKILL.md')).toBe(expected);  // Codex (+ opencode default)
+    expect(await read('.pi/skills/scan-value-chain/SKILL.md')).toBe(expected);      // Pi
   });
 });

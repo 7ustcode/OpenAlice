@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { claudeAdapter } from './claude.js';
 import { codexAdapter } from './codex.js';
+import { opencodeAdapter } from './opencode.js';
+import { piAdapter } from './pi.js';
 
 let dir: string;
 
@@ -152,5 +154,136 @@ describe('codexAdapter AI-config', () => {
 
   it('readAiConfig returns null when no files exist', async () => {
     expect(await codexAdapter.readAiConfig!(dir)).toBeNull();
+  });
+});
+
+describe('opencodeAdapter AI-config', () => {
+  const mcpEnv = { OPENALICE_MCP_URL: 'http://127.0.0.1:47332/mcp', AQ_WS_ID: 'ws-abc' };
+
+  it('injects both MCP servers + hermetic flags via composeEnv inline config', () => {
+    const env = opencodeAdapter.composeEnv!({ cwd: dir, env: mcpEnv });
+    expect(env['OPENCODE_DISABLE_MODELS_FETCH']).toBe('1');
+    expect(env['OPENCODE_DISABLE_AUTOUPDATE']).toBe('1');
+    expect(env['OPENCODE_DISABLE_LSP_DOWNLOAD']).toBe('1');
+    expect(JSON.parse(env['OPENCODE_CONFIG_CONTENT']!)).toEqual({
+      mcp: {
+        openalice: { type: 'remote', url: 'http://127.0.0.1:47332/mcp', enabled: true },
+        'openalice-workspace': {
+          type: 'remote', url: 'http://127.0.0.1:47332/mcp/ws-abc', enabled: true,
+        },
+      },
+    });
+  });
+
+  it('composeEnv throws loud when MCP url is missing from spawn env', () => {
+    expect(() => opencodeAdapter.composeEnv!({ cwd: dir, env: {} })).toThrow(/OPENALICE_MCP_URL/);
+  });
+
+  it('composeCommand: fresh is the bare binary; resume uses top-level flags', () => {
+    expect(opencodeAdapter.composeCommand(['ignored'], { cwd: dir, env: mcpEnv })).toEqual(['opencode']);
+    expect(opencodeAdapter.composeCommand([], { cwd: dir, env: mcpEnv, resume: 'last' }))
+      .toEqual(['opencode', '--continue']);
+    expect(opencodeAdapter.composeCommand([], { cwd: dir, env: mcpEnv, resume: { sessionId: 'ses_123' } }))
+      .toEqual(['opencode', '--session', 'ses_123']);
+  });
+
+  it('writes a custom OpenAI-compatible provider opencode.json', async () => {
+    await opencodeAdapter.writeAiConfig!(dir, {
+      baseUrl: 'https://cn.test/v1', apiKey: 'sk-o', model: 'deepseek-chat',
+    });
+    expect(JSON.parse(await read('opencode.json'))).toEqual({
+      $schema: 'https://opencode.ai/config.json',
+      provider: {
+        workspace: {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'OpenAlice workspace provider',
+          options: { baseURL: 'https://cn.test/v1', apiKey: 'sk-o' },
+          models: { 'deepseek-chat': { name: 'deepseek-chat' } },
+        },
+      },
+      model: 'workspace/deepseek-chat',
+    });
+  });
+
+  it('reset (empty cred) deletes opencode.json', async () => {
+    await opencodeAdapter.writeAiConfig!(dir, { baseUrl: 'u', model: 'm' });
+    await opencodeAdapter.writeAiConfig!(dir, {});
+    expect(existsSync(join(dir, 'opencode.json'))).toBe(false);
+  });
+
+  it('round-trips through readAiConfig (strips the provider/ prefix off model)', async () => {
+    await opencodeAdapter.writeAiConfig!(dir, {
+      baseUrl: 'https://cn.test/v1', apiKey: 'sk-o', model: 'deepseek-chat',
+    });
+    expect(await opencodeAdapter.readAiConfig!(dir)).toEqual({
+      baseUrl: 'https://cn.test/v1', apiKey: 'sk-o', model: 'deepseek-chat',
+    });
+  });
+
+  it('readAiConfig returns null when no file exists', async () => {
+    expect(await opencodeAdapter.readAiConfig!(dir)).toBeNull();
+  });
+});
+
+describe('piAdapter AI-config', () => {
+  const mcpEnv = { OPENALICE_MCP_URL: 'http://127.0.0.1:47332/mcp', AQ_WS_ID: 'ws-abc' };
+
+  it('composeCommand: fresh is bare; resume uses top-level --continue / --session-id', () => {
+    expect(piAdapter.composeCommand(['ignored'], { cwd: dir, env: mcpEnv })).toEqual(['pi']);
+    expect(piAdapter.composeCommand([], { cwd: dir, env: mcpEnv, resume: 'last' }))
+      .toEqual(['pi', '--continue']);
+    expect(piAdapter.composeCommand([], { cwd: dir, env: mcpEnv, resume: { sessionId: 'sess-1' } }))
+      .toEqual(['pi', '--session-id', 'sess-1']);
+  });
+
+  it('composeEnv sets PI_OFFLINE always; PI_CODING_AGENT_DIR only in override mode', async () => {
+    // No .pi-agent yet → no redirect.
+    const before = piAdapter.composeEnv!({ cwd: dir, env: mcpEnv });
+    expect(before['PI_OFFLINE']).toBe('1');
+    expect(before['PI_CODING_AGENT_DIR']).toBeUndefined();
+    // After writing a provider override, the agent dir is redirected.
+    await piAdapter.writeAiConfig!(dir, { baseUrl: 'https://cn.test/v1', apiKey: 'sk-p', model: 'deepseek-chat' });
+    const after = piAdapter.composeEnv!({ cwd: dir, env: mcpEnv });
+    expect(after['PI_CODING_AGENT_DIR']).toBe(join(dir, '.pi-agent'));
+  });
+
+  it('writes a custom openai-completions provider to .pi-agent/{models,settings}.json', async () => {
+    await piAdapter.writeAiConfig!(dir, {
+      baseUrl: 'https://cn.test/v1', apiKey: 'sk-p', model: 'deepseek-chat',
+    });
+    expect(JSON.parse(await read('.pi-agent/models.json'))).toEqual({
+      providers: {
+        workspace: {
+          name: 'OpenAlice workspace provider',
+          api: 'openai-completions',
+          baseUrl: 'https://cn.test/v1',
+          apiKey: 'sk-p',
+          models: [{ id: 'deepseek-chat' }],
+        },
+      },
+    });
+    expect(JSON.parse(await read('.pi-agent/settings.json'))).toEqual({
+      defaultProvider: 'workspace',
+      defaultModel: 'deepseek-chat',
+    });
+  });
+
+  it('reset (empty cred) tears down the entire .pi-agent/ directory', async () => {
+    await piAdapter.writeAiConfig!(dir, { baseUrl: 'u', model: 'm' });
+    await piAdapter.writeAiConfig!(dir, {});
+    expect(existsSync(join(dir, '.pi-agent'))).toBe(false);
+  });
+
+  it('round-trips through readAiConfig', async () => {
+    await piAdapter.writeAiConfig!(dir, {
+      baseUrl: 'https://cn.test/v1', apiKey: 'sk-p', model: 'deepseek-chat',
+    });
+    expect(await piAdapter.readAiConfig!(dir)).toEqual({
+      baseUrl: 'https://cn.test/v1', apiKey: 'sk-p', model: 'deepseek-chat',
+    });
+  });
+
+  it('readAiConfig returns null when no file exists', async () => {
+    expect(await piAdapter.readAiConfig!(dir)).toBeNull();
   });
 });
