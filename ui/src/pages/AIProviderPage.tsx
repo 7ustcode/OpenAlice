@@ -75,6 +75,63 @@ function vendorPreset(vendor: string, presets: Preset[]): Preset | undefined {
   return presets.find((p) => p.id === presetId) ?? presets.find((p) => p.id === 'custom')
 }
 
+// ==================== Agent runtimes ====================
+//
+// The four CLI runtimes a workspace can launch. These credentials feed them;
+// this panel orients the user on what each is and how it authenticates. Editorial
+// copy grounded in the adapters (src/workspaces/adapters/*) — keep it factual.
+
+interface RuntimeInfo {
+  id: string
+  name: string
+  blurb: string
+  facts: Array<[label: string, value: string]>
+}
+
+const AGENT_RUNTIMES: RuntimeInfo[] = [
+  {
+    id: 'claude',
+    name: 'Claude Code',
+    blurb: "Anthropic's coding-agent CLI — the deepest agentic loop.",
+    facts: [
+      ['Auth', 'Claude Pro/Max subscription (claude login) or an Anthropic API key'],
+      ['Wire', 'Anthropic Messages API; anthropic-compatible gateways via base URL + auth header (x-api-key / Bearer)'],
+      ['Tools', 'Native MCP — full OpenAlice tool surface'],
+    ],
+  },
+  {
+    id: 'codex',
+    name: 'Codex',
+    blurb: "OpenAI's coding-agent CLI.",
+    facts: [
+      ['Auth', 'ChatGPT subscription (codex login) or an OpenAI API key'],
+      ['Wire', 'OpenAI Responses API — rejects Chat Completions; Chat-only providers need a Responses proxy (OpenRouter / VibeAround)'],
+      ['Tools', 'CLI-mode (the alice CLI on PATH); MCP off in headless'],
+    ],
+  },
+  {
+    id: 'opencode',
+    name: 'opencode',
+    blurb: 'Provider-agnostic open-source agent CLI.',
+    facts: [
+      ['Auth', 'API key against any OpenAI-compatible endpoint'],
+      ['Wire', 'OpenAI Chat Completions (@ai-sdk/openai-compatible)'],
+      ['Tools', 'MCP via opencode.json'],
+      ['Good for', 'Chat-only providers (DeepSeek, Qwen, Kimi, GLM, MiniMax) and local runtimes — connects directly, no proxy'],
+    ],
+  },
+  {
+    id: 'pi',
+    name: 'Pi',
+    blurb: 'Lightweight open-source agent CLI.',
+    facts: [
+      ['Auth', 'API key against any OpenAI-compatible endpoint'],
+      ['Wire', 'OpenAI Chat Completions'],
+      ['Tools', 'No native MCP — reaches OpenAlice through the alice CLI bridge'],
+    ],
+  },
+]
+
 // ==================== Page ====================
 
 export function AIProviderPage() {
@@ -113,66 +170,102 @@ export function AIProviderPage() {
     <div className="flex flex-col flex-1 min-h-0">
       <PageHeader title="AI Provider" description="Credentials Alice holds and injects into workspaces." />
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6">
-        <div className="max-w-[760px] mx-auto">
-          <div className="rounded-lg border border-border/50 bg-bg-secondary/50 px-4 py-3 mb-4">
-            <p className="text-[13px] text-text-muted leading-relaxed">
-              These are the API keys Alice keeps centrally. Templates inject them into new
-              workspaces, and a workspace's AI config can load any of them. Subscription
-              logins (Claude Pro/Max, ChatGPT) aren't stored here — they live in the agent
-              CLI's own login (<code className="font-mono text-[11.5px]">claude login</code> /{' '}
-              <code className="font-mono text-[11.5px]">codex login</code>).
-            </p>
-          </div>
+        <div className="max-w-[1100px] mx-auto grid gap-6 lg:grid-cols-2">
+          {/* ============== Credentials ============== */}
+          <section>
+            <div className="rounded-lg border border-border/50 bg-bg-secondary/50 px-4 py-3 mb-4">
+              <p className="text-[13px] text-text-muted leading-relaxed">
+                The API keys Alice keeps centrally. Templates inject them into new
+                workspaces, and a workspace's AI config can load any of them. Subscription
+                logins (Claude Pro/Max, ChatGPT) aren't stored here — they live in the agent
+                CLI's own login (<code className="font-mono text-[11.5px]">claude login</code> /{' '}
+                <code className="font-mono text-[11.5px]">codex login</code>).
+              </p>
+            </div>
 
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[13px] font-semibold text-text uppercase tracking-wide">Credentials</h2>
-            <button
-              onClick={() => setModal({ mode: 'add' })}
-              className="text-[11px] px-2 py-1 rounded-md border border-border text-text-muted hover:text-accent hover:border-accent transition-colors"
-            >
-              + Add
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            {credentials.map((cred) => (
-              <div key={cred.slug} className="flex items-center gap-3 rounded-lg border border-border bg-bg px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium text-text">{cred.vendor}</span>
-                    <span className="text-[11px] text-text-muted font-mono">{cred.slug}</span>
-                    {cred.hasApiKey && (
-                      <span className="text-[10px] text-green border border-green/40 rounded px-1">key set</span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-text-muted mt-0.5 font-mono truncate">
-                    {cred.baseUrl ?? 'default endpoint'}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setModal({ mode: 'edit', cred })}
-                  className="text-[11px] px-2 py-1 rounded-md border border-border text-text-muted hover:text-text transition-colors"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(cred.slug)}
-                  className="text-[11px] px-2 py-1 rounded-md border border-border text-text-muted hover:text-red transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-
-            {credentials.length === 0 && (
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[13px] font-semibold text-text uppercase tracking-wide">Credentials</h2>
               <button
                 onClick={() => setModal({ mode: 'add' })}
-                className="w-full p-4 rounded-xl border-2 border-dashed border-border text-text-muted hover:border-accent/50 hover:text-accent transition-all text-[13px] font-medium"
+                className="text-[11px] px-2 py-1 rounded-md border border-border text-text-muted hover:text-accent hover:border-accent transition-colors"
               >
-                + Add your first credential
+                + Add
               </button>
-            )}
-          </div>
+            </div>
+
+            <div className="space-y-2.5">
+              {credentials.map((cred) => (
+                <div key={cred.slug} className="flex items-center gap-3 rounded-lg border border-border bg-bg px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-medium text-text">{cred.vendor}</span>
+                      <span className="text-[11px] text-text-muted font-mono">{cred.slug}</span>
+                      {cred.hasApiKey && (
+                        <span className="text-[10px] text-green border border-green/40 rounded px-1">key set</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-text-muted mt-0.5 font-mono truncate">
+                      {cred.baseUrl ?? 'default endpoint'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setModal({ mode: 'edit', cred })}
+                    className="text-[11px] px-2 py-1 rounded-md border border-border text-text-muted hover:text-text transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(cred.slug)}
+                    className="text-[11px] px-2 py-1 rounded-md border border-border text-text-muted hover:text-red transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
+
+              {credentials.length === 0 && (
+                <button
+                  onClick={() => setModal({ mode: 'add' })}
+                  className="w-full p-4 rounded-xl border-2 border-dashed border-border text-text-muted hover:border-accent/50 hover:text-accent transition-all text-[13px] font-medium"
+                >
+                  + Add your first credential
+                </button>
+              )}
+            </div>
+          </section>
+
+          {/* ============== Agent runtimes ============== */}
+          <section>
+            <div className="rounded-lg border border-border/50 bg-bg-secondary/50 px-4 py-3 mb-4">
+              <p className="text-[13px] text-text-muted leading-relaxed">
+                The agent runtimes a workspace can launch. A credential above feeds whichever
+                one a workspace (or cron job) runs — pick the runtime that fits your provider's
+                wire shape. The model is chosen per workspace, not here.
+              </p>
+            </div>
+
+            <h2 className="text-[13px] font-semibold text-text uppercase tracking-wide mb-3">Agent runtimes</h2>
+
+            <div className="space-y-2.5">
+              {AGENT_RUNTIMES.map((rt) => (
+                <div key={rt.id} className="rounded-lg border border-border bg-bg px-4 py-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[13px] font-medium text-text">{rt.name}</span>
+                    <span className="text-[11px] text-text-muted font-mono">{rt.id}</span>
+                  </div>
+                  <p className="text-[12px] text-text-muted mt-0.5 leading-snug">{rt.blurb}</p>
+                  <dl className="mt-2 space-y-1">
+                    {rt.facts.map(([label, value]) => (
+                      <div key={label} className="flex gap-2 text-[11px] leading-snug">
+                        <dt className="text-text-muted/70 shrink-0 w-[58px]">{label}</dt>
+                        <dd className="text-text-muted">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
 
