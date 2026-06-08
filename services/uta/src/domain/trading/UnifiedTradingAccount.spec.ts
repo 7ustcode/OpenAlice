@@ -22,6 +22,31 @@ function getStagedPlaceOrder(uta: UnifiedTradingAccount) {
   return { contract: op.contract, order: op.order }
 }
 
+// ==================== Read-only / keyless write guard ====================
+
+describe('UTA — read-only / keyless write guard', () => {
+  it('refuses stage operations on a read-only account', () => {
+    const { uta } = createUTA(undefined, { readOnly: true })
+    expect(uta.readOnly).toBe(true)
+    expect(uta.keyless).toBe(false)
+    expect(() => uta.stageCancelOrder({ orderId: 'x' })).toThrow(/read-only/)
+    expect(() => uta.stagePlaceOrder({ aliceId: 'mock-paper|AAPL', action: 'BUY', orderType: 'MKT', totalQuantity: 1 } as never)).toThrow(/read-only/)
+  })
+
+  it('keyless implies read-only and names keyless in the error', () => {
+    const { uta } = createUTA(undefined, { keyless: true })
+    expect(uta.keyless).toBe(true)
+    expect(uta.readOnly).toBe(true)
+    expect(() => uta.stageCancelOrder({ orderId: 'x' })).toThrow(/keyless/)
+  })
+
+  it('a normal account stages without complaint', () => {
+    const { uta } = createUTA()
+    expect(uta.readOnly).toBe(false)
+    expect(() => uta.stageCancelOrder({ orderId: 'x' })).not.toThrow()
+  })
+})
+
 // ==================== Operation dispatch (via push) ====================
 
 describe('UTA — operation dispatch', () => {

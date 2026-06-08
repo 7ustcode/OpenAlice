@@ -278,6 +278,7 @@ describe('writeUTAsConfig', () => {
     await writeUTAsConfig([{
       id: 'acc-1', presetId: 'alpaca', enabled: true, guards: [],
       presetConfig: { mode: 'paper', apiKey: 'k', apiSecret: 's' },
+      keyless: false, readOnly: false, editable: true,
     }])
     const filePath = mockWriteFile.mock.calls[0][0] as string
     expect(filePath).toMatch(/accounts\.json$/)

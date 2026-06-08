@@ -124,6 +124,8 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
     return new CcxtBroker({
       id: config.id,
       label: config.label,
+      // configSchema strips unknown keys, so read keyless off the raw dict.
+      keyless: config.brokerConfig.keyless === true,
       exchange: bc.exchange,
       sandbox: bc.sandbox,
       demoTrading: bc.demoTrading,
@@ -150,6 +152,8 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
 
   private exchange: Exchange
   private exchangeName: string
+  /** Public-data-only mode — skip credential validation in init(). */
+  private keyless: boolean
   private initialized = false
   private overrides: CcxtExchangeOverrides
   // orderId → ccxtSymbol cache (CCXT needs symbol to cancel)
@@ -157,6 +161,7 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
 
   constructor(config: CcxtBrokerConfig) {
     this.exchangeName = config.exchange
+    this.keyless = config.keyless ?? false
     this.meta = { exchange: config.exchange }
     this.overrides = exchangeOverrides[config.exchange] ?? {}
     this.id = config.id ?? `${config.exchange}-main`
@@ -205,9 +210,11 @@ export class CcxtBroker implements IBroker<CcxtBrokerMeta> {
   // ---- Lifecycle ----
 
   async init(): Promise<void> {
-    // Validate credentials per the exchange's own requiredCredentials map.
+    // Keyless (public-data-only) accounts skip credential validation — they
+    // only ever call public endpoints (loadMarkets / fetchOHLCV / fetchTicker).
+    // Validate credentials per the exchange's own requiredCredentials map otherwise.
     // Hyperliquid needs walletAddress + privateKey; OKX needs apiKey + secret + password; etc.
-    try {
+    if (!this.keyless) try {
       this.exchange.checkRequiredCredentials()
     } catch (err) {
       const required = Object.entries(this.exchange.requiredCredentials ?? {})

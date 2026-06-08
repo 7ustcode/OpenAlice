@@ -41,6 +41,11 @@ export interface UnifiedTradingAccountOptions {
   onHealthChange?: (accountId: string, health: BrokerHealthInfo) => void
   onPostPush?: (accountId: string) => void | Promise<void>
   onPostReject?: (accountId: string) => void | Promise<void>
+  /** Refuse write operations (stage/commit/push). Implied by keyless. */
+  readOnly?: boolean
+  /** Public-data-only account (no key) — no account/positions; excluded from
+   *  equity aggregation. Implies readOnly. */
+  keyless?: boolean
 }
 
 // ==================== Stage param types ====================
@@ -73,6 +78,10 @@ export class UnifiedTradingAccount {
   readonly label: string
   readonly broker: IBroker
   readonly git: TradingGit
+  /** Public-data-only (no key, no account/positions, excluded from equity agg). */
+  readonly keyless: boolean
+  /** Write operations refused (implied by keyless). */
+  readonly readOnly: boolean
 
   private readonly _getState: () => Promise<GitState>
   private readonly _onHealthChange?: (accountId: string, health: BrokerHealthInfo) => void
@@ -98,6 +107,8 @@ export class UnifiedTradingAccount {
     this.broker = broker
     this.id = broker.id
     this.label = broker.label
+    this.keyless = options.keyless ?? false
+    this.readOnly = options.readOnly ?? options.keyless ?? false
     this._onHealthChange = options.onHealthChange
     this._onPostPush = options.onPostPush
     this._onPostReject = options.onPostReject
@@ -346,7 +357,16 @@ export class UnifiedTradingAccount {
 
   // ==================== Stage operations ====================
 
+  /** Loud-refuse writes on a read-only / keyless (data-only) account. */
+  private _assertWritable(): void {
+    if (this.readOnly) {
+      throw new BrokerError('CONFIG',
+        `Account "${this.label}" is read-only${this.keyless ? ' (keyless public-data account)' : ''} — trading operations are not allowed.`)
+    }
+  }
+
   stagePlaceOrder(params: StagePlaceOrderParams): AddResult {
+    this._assertWritable()
     // Resolve aliceId → full contract via broker (fills secType, exchange, currency, conId, etc.)
     const contract = this.contractFromAliceId(params.aliceId)
     if (params.symbol) contract.symbol = params.symbol
@@ -376,6 +396,7 @@ export class UnifiedTradingAccount {
   }
 
   stageModifyOrder(params: StageModifyOrderParams): AddResult {
+    this._assertWritable()
     const changes: Partial<Order> = {}
     if (params.totalQuantity != null) changes.totalQuantity = new Decimal(String(params.totalQuantity))
     if (params.lmtPrice != null) changes.lmtPrice = new Decimal(String(params.lmtPrice))
@@ -390,6 +411,7 @@ export class UnifiedTradingAccount {
   }
 
   stageClosePosition(params: StageClosePositionParams): AddResult {
+    this._assertWritable()
     const contract = this.contractFromAliceId(params.aliceId)
     if (params.symbol) contract.symbol = params.symbol
 
@@ -401,6 +423,7 @@ export class UnifiedTradingAccount {
   }
 
   stageCancelOrder(params: { orderId: string }): AddResult {
+    this._assertWritable()
     return this.git.add({ action: 'cancelOrder', orderId: params.orderId })
   }
 

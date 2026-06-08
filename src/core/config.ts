@@ -354,6 +354,16 @@ export const utaConfigSchema = z.object({
    * real broker would silently destroy account history on next boot.
    */
   ephemeral: z.boolean().optional(),
+  /** No API key required to create/connect. A keyless UTA serves only public
+   *  market data (quote/bars/search) — it has no account/positions and is
+   *  excluded from portfolio equity aggregation. keyless ⟹ readOnly. */
+  keyless: z.boolean().default(false),
+  /** Read-only — write operations (stage/commit/push of orders) are refused.
+   *  Implied by keyless; can also be set on a keyed account for a watch-only view. */
+  readOnly: z.boolean().default(false),
+  /** Whether this UTA can be edited/removed via the config UI. The built-in
+   *  keyless data UTAs (binance/okx/bybit-readonly) are non-editable. */
+  editable: z.boolean().default(true),
 }).refine((u) => u.ephemeral !== true || u.presetId === 'mock-simulator', {
   message: 'ephemeral: true is only allowed on mock-simulator UTAs (would destroy real broker history at next boot)',
   path: ['ephemeral'],
