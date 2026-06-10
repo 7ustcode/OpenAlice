@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PageHeader } from '../components/PageHeader'
-import { referenceApi, type MoversBoard, type MoverRow, type ReferenceMeta } from '../api/reference'
+import {
+  referenceApi,
+  type MoversBoard, type MoverRow, type ReferenceMeta, type CalendarBoard,
+} from '../api/reference'
 import { useWorkspace } from '../tabs/store'
 import type { ViewSpec } from '../tabs/types'
 
@@ -10,6 +13,7 @@ type BoardKind = Extract<ViewSpec, { kind: 'market-board' }>['params']['board']
 /** Tab titles (plain English, matching the registry's other title strings). */
 export const MARKET_BOARD_TITLES: Record<BoardKind, string> = {
   movers: 'Movers',
+  calendar: 'Calendar',
 }
 
 const REFRESH_MS = 5 * 60 * 1000
@@ -23,6 +27,8 @@ export function MarketBoardPage({ spec }: PageProps) {
   switch (spec.params.board) {
     case 'movers':
       return <MoversBoardView />
+    case 'calendar':
+      return <CalendarBoardView />
   }
 }
 
@@ -154,6 +160,184 @@ function MoversTable({ rows }: { rows: MoverRow[] }) {
             </tr>
           ))}
         </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ==================== Calendar ====================
+
+type CalendarList = 'earnings' | 'ipos' | 'dividends'
+
+function CalendarBoardView() {
+  const { t } = useTranslation()
+  const [data, setData] = useState<CalendarBoard | null>(null)
+  const [list, setList] = useState<CalendarList>('earnings')
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const res = await referenceApi.calendar()
+        if (!alive) return
+        setData(res)
+        setUpdatedAt(new Date())
+        setError(null)
+      } catch (err) {
+        if (!alive) return
+        setError(err instanceof Error ? err.message : 'Failed to load')
+      } finally {
+        if (alive) setLoading(false)
+      }
+    }
+    load()
+    const timer = setInterval(load, 30 * 60 * 1000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [])
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <PageHeader
+        title={t('market.boardCalendar')}
+        description={
+          <>
+            {t('market.calendarSubtitle')}
+            {data && <span className="text-text-muted/50"> · {data.window.start} → {data.window.end} · {data.meta.provider}</span>}
+          </>
+        }
+        live={{ lastUpdated: updatedAt }}
+      />
+      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 flex flex-col gap-4 min-h-0">
+        <div className="flex items-center gap-1">
+          {(['earnings', 'ipos', 'dividends'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setList(k)}
+              className={`px-3 py-1 rounded-md text-[12px] font-medium transition-colors ${
+                list === k
+                  ? 'bg-bg-tertiary text-text'
+                  : 'text-text-muted hover:text-text hover:bg-bg-secondary'
+              }`}
+            >
+              {calendarLabel(k, t)} ({data?.[k].length ?? 0})
+            </button>
+          ))}
+        </div>
+
+        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {error && (
+          <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
+        )}
+        {/* Per-list upstream failure — loud, with the provider's own message. */}
+        {data?.errors?.[list] && (
+          <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{data.errors[list]}</div>
+        )}
+        {data && data[list].length === 0 && !loading && !data.errors?.[list] && (
+          <div className="text-[13px] text-text-muted">{t('market.noMatches')}</div>
+        )}
+        {data && list === 'earnings' && data.earnings.length > 0 && <EarningsTable board={data} />}
+        {data && list === 'ipos' && data.ipos.length > 0 && <IpoTable board={data} />}
+        {data && list === 'dividends' && data.dividends.length > 0 && <DividendTable board={data} />}
+      </div>
+    </div>
+  )
+}
+
+function calendarLabel(k: CalendarList, t: ReturnType<typeof useTranslation>['t']): string {
+  switch (k) {
+    case 'earnings': return t('market.calEarnings')
+    case 'ipos': return t('market.calIpos')
+    case 'dividends': return t('market.calDividends')
+  }
+}
+
+function useOpenEquity() {
+  const openOrFocus = useWorkspace((s) => s.openOrFocus)
+  return (symbol: string | null) => {
+    if (!symbol) return
+    openOrFocus({ kind: 'market-detail', params: { assetClass: 'equity', symbol } })
+  }
+}
+
+function EarningsTable({ board }: { board: CalendarBoard }) {
+  const { t } = useTranslation()
+  const open = useOpenEquity()
+  // Sorted by date so the board reads as an agenda.
+  const rows = [...board.earnings].sort((a, b) => a.report_date.localeCompare(b.report_date))
+  return (
+    <CalTable head={[t('market.colDate'), t('market.colSymbol'), t('market.colEpsPrev'), t('market.colEpsEst')]} rightCols={[2, 3]}>
+      {rows.map((r, i) => (
+        <tr key={`${r.symbol}-${i}`} className="border-b border-border/50 hover:bg-bg-secondary/40 cursor-pointer" onClick={() => open(r.symbol)}>
+          <td className="py-1.5 pr-3 text-text-muted whitespace-nowrap">{r.report_date}</td>
+          <td className="py-1.5 px-3">
+            <span className="font-mono font-semibold text-text">{r.symbol}</span>
+            {r.name && <span className="ml-2 text-text-muted">{r.name}</span>}
+          </td>
+          <td className="py-1.5 px-3 text-right font-mono text-text">{r.eps_previous ?? '—'}</td>
+          <td className="py-1.5 pl-3 text-right font-mono text-text">{r.eps_consensus ?? '—'}</td>
+        </tr>
+      ))}
+    </CalTable>
+  )
+}
+
+function IpoTable({ board }: { board: CalendarBoard }) {
+  const { t } = useTranslation()
+  const open = useOpenEquity()
+  const rows = [...board.ipos].sort((a, b) => (a.ipo_date ?? '').localeCompare(b.ipo_date ?? ''))
+  return (
+    <CalTable head={[t('market.colDate'), t('market.colSymbol'), t('market.colExchange')]}>
+      {rows.map((r, i) => (
+        <tr key={`${r.symbol}-${i}`} className="border-b border-border/50 hover:bg-bg-secondary/40 cursor-pointer" onClick={() => open(r.symbol)}>
+          <td className="py-1.5 pr-3 text-text-muted whitespace-nowrap">{r.ipo_date ?? '—'}</td>
+          <td className="py-1.5 px-3">
+            <span className="font-mono font-semibold text-text">{r.symbol ?? '—'}</span>
+            {typeof r.name === 'string' && r.name && <span className="ml-2 text-text-muted">{r.name}</span>}
+          </td>
+          <td className="py-1.5 pl-3 text-text-muted">{typeof r.exchange === 'string' ? r.exchange : '—'}</td>
+        </tr>
+      ))}
+    </CalTable>
+  )
+}
+
+function DividendTable({ board }: { board: CalendarBoard }) {
+  const { t } = useTranslation()
+  const open = useOpenEquity()
+  const rows = [...board.dividends].sort((a, b) => a.ex_dividend_date.localeCompare(b.ex_dividend_date))
+  return (
+    <CalTable head={[t('market.colExDate'), t('market.colSymbol'), t('market.colDivAmount'), t('market.colPayDate')]} rightCols={[2]}>
+      {rows.map((r, i) => (
+        <tr key={`${r.symbol}-${i}`} className="border-b border-border/50 hover:bg-bg-secondary/40 cursor-pointer" onClick={() => open(r.symbol)}>
+          <td className="py-1.5 pr-3 text-text-muted whitespace-nowrap">{r.ex_dividend_date}</td>
+          <td className="py-1.5 px-3">
+            <span className="font-mono font-semibold text-text">{r.symbol}</span>
+            {r.name && <span className="ml-2 text-text-muted">{r.name}</span>}
+          </td>
+          <td className="py-1.5 px-3 text-right font-mono text-text">{r.amount ?? '—'}</td>
+          <td className="py-1.5 pl-3 text-text-muted whitespace-nowrap">{r.payment_date ?? '—'}</td>
+        </tr>
+      ))}
+    </CalTable>
+  )
+}
+
+function CalTable({ head, rightCols = [], children }: { head: string[]; rightCols?: number[]; children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[12px] border-collapse">
+        <thead>
+          <tr className="text-text-muted/70 text-left border-b border-border">
+            {head.map((h, i) => (
+              <th key={h} className={`py-1.5 font-medium ${i === 0 ? 'pr-3' : i === head.length - 1 ? 'pl-3' : 'px-3'} ${rightCols.includes(i) ? 'text-right' : ''}`}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
       </table>
     </div>
   )

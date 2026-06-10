@@ -23,5 +23,16 @@ export function createReferenceRoutes(ctx: EngineContext): Hono {
     }
   })
 
+  // GET /api/reference/calendar?days= → earnings / IPO / ex-dividend board
+  app.get('/calendar', async (c) => {
+    const daysRaw = c.req.query('days')
+    const days = daysRaw ? Math.max(1, Math.min(60, Number(daysRaw) || 14)) : undefined
+    try {
+      return c.json(await ctx.reference.calendar(days ? { days } : undefined))
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502)
+    }
+  })
+
   return app
 }

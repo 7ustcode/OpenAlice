@@ -14,7 +14,9 @@
  * explicit `meta` envelope.
  */
 
-import type { EquityDiscoveryData } from '@traderalice/opentypebb'
+import type {
+  EquityDiscoveryData, CalendarEarningsData, CalendarIpoData, CalendarDividendData,
+} from '@traderalice/opentypebb'
 
 /** Envelope on every reference payload. Provider is an explicit label —
  *  same philosophy as the bar layer's sourceId: annotate the source,
@@ -37,6 +39,21 @@ export interface MoversBoard {
   meta: ReferenceMeta
 }
 
+// ==================== Calendar board ====================
+
+export interface CalendarBoard {
+  earnings: CalendarEarningsData[]
+  ipos: CalendarIpoData[]
+  dividends: CalendarDividendData[]
+  /** Window the board covers (YYYY-MM-DD, inclusive). */
+  window: { start: string; end: string }
+  /** Per-list upstream failures. A list can fail (e.g. FMP tier/suspension
+   *  rejects one endpoint) while siblings succeed — surface it loudly
+   *  instead of rendering a silently empty list. */
+  errors?: Partial<Record<'earnings' | 'ipos' | 'dividends', string>>
+  meta: ReferenceMeta
+}
+
 // ==================== Service ====================
 
 /** Board-shaped reference-data access. The webui routes are thin adapters
@@ -44,4 +61,7 @@ export interface MoversBoard {
  *  the clients directly for now and converge here as the contract grows. */
 export interface ReferenceDataService {
   movers(): Promise<MoversBoard>
+  /** Upcoming earnings / IPOs / ex-dividend dates. Requires an FMP key —
+   *  fails loud with an actionable message when it's missing. */
+  calendar(opts?: { days?: number }): Promise<CalendarBoard>
 }

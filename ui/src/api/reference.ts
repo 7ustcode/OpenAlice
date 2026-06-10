@@ -39,6 +39,41 @@ export interface MoversBoard {
   meta: ReferenceMeta
 }
 
+/** One earnings-calendar row (FMP). */
+export interface EarningsEvent {
+  report_date: string
+  symbol: string
+  name: string | null
+  eps_previous: number | null
+  eps_consensus: number | null
+}
+
+export interface IpoEvent {
+  symbol: string | null
+  ipo_date: string | null
+  [k: string]: unknown
+}
+
+export interface DividendEvent {
+  ex_dividend_date: string
+  symbol: string
+  amount: number | null
+  name: string | null
+  record_date: string | null
+  payment_date: string | null
+}
+
+export interface CalendarBoard {
+  earnings: EarningsEvent[]
+  ipos: IpoEvent[]
+  dividends: DividendEvent[]
+  window: { start: string; end: string }
+  /** Per-list upstream failures (e.g. FMP tier rejects one endpoint). */
+  errors?: Partial<Record<'earnings' | 'ipos' | 'dividends', string>>
+  meta: ReferenceMeta
+}
+
 export const referenceApi = {
   movers: () => fetchJson<MoversBoard>('/api/reference/movers'),
+  calendar: () => fetchJson<CalendarBoard>('/api/reference/calendar'),
 }

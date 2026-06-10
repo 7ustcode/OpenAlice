@@ -6,7 +6,7 @@ import {
   demoSectorRotation,
 } from '../fixtures/market'
 import type { BarSourceCandidate, BarMeta } from '../../api/market'
-import type { MoversBoard, MoverRow } from '../../api/reference'
+import type { MoversBoard, MoverRow, CalendarBoard } from '../../api/reference'
 
 const AAPL = 'AAPL'
 
@@ -36,6 +36,7 @@ export const marketHandlers = [
 
   // Movers board — static snapshot, typed against the canonical contract.
   http.get('/api/reference/movers', () => HttpResponse.json(demoMovers)),
+  http.get('/api/reference/calendar', () => HttpResponse.json(demoCalendar)),
 
   // ---- federated bars (multi-source K-lines) ----
   // AAPL has two demo sources so the source picker is exercised.
@@ -114,4 +115,20 @@ const demoMovers: MoversBoard = {
     mover('NVDA', 'NVIDIA Corporation', 1042.1, 0.062, 5.1e7, 1.8),
   ],
   meta: { provider: 'yfinance', asOf: '2026-06-10T13:30:00.000Z' },
+}
+
+const demoCalendar: CalendarBoard = {
+  earnings: [
+    { report_date: '2026-06-11', symbol: 'ORCL', name: 'Oracle Corporation', eps_previous: 1.41, eps_consensus: 1.65 },
+    { report_date: '2026-06-12', symbol: 'ADBE', name: 'Adobe Inc.', eps_previous: 4.48, eps_consensus: 4.97 },
+    { report_date: '2026-06-17', symbol: 'ACN', name: 'Accenture plc', eps_previous: 3.13, eps_consensus: 3.32 },
+  ],
+  ipos: [
+    { symbol: 'DEMO', ipo_date: '2026-06-15', name: 'Demo Robotics Holdings', exchange: 'NASDAQ' },
+  ],
+  dividends: [
+    { ex_dividend_date: '2026-06-12', symbol: 'AAPL', amount: 0.26, name: 'Apple Inc.', record_date: '2026-06-13', payment_date: '2026-06-19', declaration_date: '2026-05-01' } as CalendarBoard['dividends'][number],
+  ],
+  window: { start: '2026-06-10', end: '2026-06-24' },
+  meta: { provider: 'fmp', asOf: '2026-06-10T13:30:00.000Z' },
 }

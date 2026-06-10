@@ -10,7 +10,8 @@ import { buildCredentialsHeader } from '../../credential-map'
 import type {
   EquitySearchData, EquityHistoricalData, EquityInfoData, KeyMetricsData,
   IncomeStatementData, BalanceSheetData, CashFlowStatementData, FinancialRatiosData,
-  PriceTargetConsensusData, CalendarEarningsData, InsiderTradingData, EquityDiscoveryData,
+  PriceTargetConsensusData, CalendarEarningsData, CalendarIpoData, CalendarDividendData,
+  InsiderTradingData, EquityDiscoveryData,
 } from '@traderalice/opentypebb'
 
 export class OpenBBEquityClient {
@@ -165,11 +166,11 @@ export class OpenBBEquityClient {
   // ==================== Calendar ====================
 
   async getCalendarIpo(params: Record<string, unknown> = {}) {
-    return this.request('/calendar/ipo', params)
+    return this.request<CalendarIpoData>('/calendar/ipo', params)
   }
 
   async getCalendarDividend(params: Record<string, unknown> = {}) {
-    return this.request('/calendar/dividend', params)
+    return this.request<CalendarDividendData>('/calendar/dividend', params)
   }
 
   async getCalendarSplits(params: Record<string, unknown> = {}) {

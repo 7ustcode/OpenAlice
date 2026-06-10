@@ -14,6 +14,12 @@ function mkCtx(overrides?: Partial<ReferenceDataService>): EngineContext {
       gainers: [ROW], losers: [], active: [ROW],
       meta: { provider: 'yfinance', asOf: '2026-06-10T00:00:00.000Z' },
     }),
+    calendar: async () => ({
+      earnings: [{ report_date: '2026-06-12', symbol: 'AAPL', name: 'Apple', eps_previous: 1.2, eps_consensus: 1.4 }],
+      ipos: [], dividends: [],
+      window: { start: '2026-06-10', end: '2026-06-24' },
+      meta: { provider: 'fmp', asOf: '2026-06-10T00:00:00.000Z' },
+    }),
     ...overrides,
   }
   return { reference } as unknown as EngineContext
@@ -25,6 +31,21 @@ describe('reference routes', () => {
     const body = await res.json()
     expect(body.gainers[0].symbol).toBe('NVDA')
     expect(body.meta.provider).toBe('yfinance')
+  })
+
+  it('GET /calendar returns the board with the window', async () => {
+    const res = await createReferenceRoutes(mkCtx()).request('/calendar')
+    const body = await res.json()
+    expect(body.earnings[0].symbol).toBe('AAPL')
+    expect(body.window.start).toBe('2026-06-10')
+    expect(body.meta.provider).toBe('fmp')
+  })
+
+  it('GET /calendar fails loud (502) when the provider key is missing', async () => {
+    const ctx = mkCtx({ calendar: async () => { throw new Error('FMP API key required') } })
+    const res = await createReferenceRoutes(ctx).request('/calendar')
+    expect(res.status).toBe(502)
+    expect((await res.json()).error).toMatch(/FMP/)
   })
 
   it('GET /movers surfaces a failure as { error } with 502, not a crash', async () => {
