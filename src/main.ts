@@ -29,6 +29,7 @@ import { OpenBBEconomyClient } from './domain/market-data/client/openbb-api/econ
 import { createMarketSearchTools } from './tool/market.js'
 import { createQuantTools } from './tool/quant.js'
 import { createBarService } from './domain/market-data/bars/index.js'
+import { createReferenceData } from './domain/market-data/reference/service.js'
 import { createSectorRotationTools } from './tool/sector-rotation.js'
 import { createEconomyTools } from './tool/economy.js'
 import { SessionStore } from './core/session.js'
@@ -184,6 +185,13 @@ async function main() {
     vendorProviders: config.marketData.providers,
   })
 
+  // Reference-data contract — board-shaped low-frequency data (movers, macro,
+  // calendar, …). Alice's own standard; the future hosted-hub seam.
+  const reference = createReferenceData({
+    equityClient,
+    equityProvider: config.marketData.providers.equity,
+  })
+
   // ==================== Tool Registration ====================
 
   toolCenter.register(createThinkingTools(), 'thinking')
@@ -309,6 +317,7 @@ async function main() {
     marketSearch,
     equityClient,
     barService,
+    reference,
     utaManager,
     newsProvider: newsStore,
   }

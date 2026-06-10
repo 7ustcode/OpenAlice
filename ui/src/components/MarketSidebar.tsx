@@ -85,6 +85,11 @@ export function MarketSidebar() {
           active={isFocused('market-rotation')}
           onClick={() => openOrFocus({ kind: 'market-rotation', params: {} })}
         />
+        <SidebarRow
+          label={t('market.boardMovers')}
+          active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'movers'}
+          onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'movers' } })}
+        />
 
         {/* Search results — only when query is non-empty */}
         {query.trim() && (

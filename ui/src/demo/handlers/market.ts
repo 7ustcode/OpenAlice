@@ -6,6 +6,7 @@ import {
   demoSectorRotation,
 } from '../fixtures/market'
 import type { BarSourceCandidate, BarMeta } from '../../api/market'
+import type { MoversBoard, MoverRow } from '../../api/reference'
 
 const AAPL = 'AAPL'
 
@@ -32,6 +33,9 @@ export const marketHandlers = [
 
   // Sector rotation — static snapshot fixture.
   http.get('/api/market/sector-rotation', () => HttpResponse.json(demoSectorRotation)),
+
+  // Movers board — static snapshot, typed against the canonical contract.
+  http.get('/api/reference/movers', () => HttpResponse.json(demoMovers)),
 
   // ---- federated bars (multi-source K-lines) ----
   // AAPL has two demo sources so the source picker is exercised.
@@ -78,3 +82,36 @@ export const marketHandlers = [
 
   http.post('/api/market-data/test-provider', () => HttpResponse.json({ ok: true })),
 ]
+
+// ---- movers fixture ----
+
+function mover(symbol: string, name: string, price: number, pct: number, volume: number, rvol: number): MoverRow {
+  return {
+    symbol, name, price,
+    change: price * pct,
+    percent_change: pct,
+    volume,
+    avg_volume: Math.round(volume / rvol),
+    relative_volume: rvol,
+    turnover: 0.02,
+    dollar_volume: price * volume,
+  }
+}
+
+const demoMovers: MoversBoard = {
+  gainers: [
+    mover('NVDA', 'NVIDIA Corporation', 1042.1, 0.062, 5.1e7, 1.8),
+    mover('SMCI', 'Super Micro Computer', 812.4, 0.054, 9.2e6, 2.6),
+    mover('AAPL', 'Apple Inc.', 228.9, 0.031, 6.4e7, 1.2),
+  ],
+  losers: [
+    mover('TSLA', 'Tesla, Inc.', 182.3, -0.047, 9.8e7, 1.5),
+    mover('INTC', 'Intel Corporation', 30.6, -0.038, 4.4e7, 1.1),
+  ],
+  active: [
+    mover('TSLA', 'Tesla, Inc.', 182.3, -0.047, 9.8e7, 1.5),
+    mover('AAPL', 'Apple Inc.', 228.9, 0.031, 6.4e7, 1.2),
+    mover('NVDA', 'NVIDIA Corporation', 1042.1, 0.062, 5.1e7, 1.8),
+  ],
+  meta: { provider: 'yfinance', asOf: '2026-06-10T13:30:00.000Z' },
+}
