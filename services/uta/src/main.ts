@@ -95,7 +95,7 @@ async function main(): Promise<void> {
   const routeMap = buildRouteMap()
   const credentials = buildSDKCredentials(config.marketData.providerKeys)
   const currencyClient: CurrencyClientLike = new SDKCurrencyClient(executor, 'currency', providers.currency, credentials, routeMap)
-  const fxService = new FxService(currencyClient)
+  const fxService = new FxService(currencyClient, undefined, config.marketData.hub)
   utaManager.setFxService(fxService)
 
   // ==================== Snapshots ====================
