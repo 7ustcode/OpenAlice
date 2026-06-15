@@ -46,18 +46,19 @@ const MAX_SEED_PROMPT = 16000;
 /** The template quick-chat reuses-or-creates its workspace from. */
 const QUICK_CHAT_TEMPLATE = 'chat';
 
+const MONTH_ABBR = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'] as const;
+
 /**
- * A valid, unused tag for the one chat workspace quick-chat creates on first
- * use (`chat`, then `chat-2`, … on collision). Quick-chat reuses this workspace
- * thereafter, so this only runs once until the user deletes it.
+ * Tag for TODAY's chat workspace — `chat-<mon><day>` (e.g. `chat-jun15`).
+ * Quick-chat is one-workspace-per-DAY: today's conversations are sessions inside
+ * today's workspace. The format mirrors the frontend's `defaultTagFor`
+ * (`<template>-<month><day>`, en-US short month lowercased) so a quick-chat-
+ * created daily workspace is byte-identical to one created from the form on the
+ * same day — the two converge on the same workspace instead of duplicating.
  */
-function freshChatTag(svc: WorkspaceService): string {
-  if (!svc.registry.hasTag(QUICK_CHAT_TEMPLATE)) return QUICK_CHAT_TEMPLATE;
-  for (let i = 2; i < 1000; i++) {
-    const t = `${QUICK_CHAT_TEMPLATE}-${i}`;
-    if (!svc.registry.hasTag(t)) return t;
-  }
-  return `${QUICK_CHAT_TEMPLATE}-${randomUUID().slice(0, 8)}`;
+function todayChatTag(): string {
+  const now = new Date();
+  return `${QUICK_CHAT_TEMPLATE}-${MONTH_ABBR[now.getMonth()]}${now.getDate()}`;
 }
 
 /**
@@ -187,33 +188,41 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     }
   }
 
-  // Serializes quick-chat's find-or-create so two concurrent FIRST-TIME launches
-  // don't both bootstrap a `chat` workspace — the loser's `registry.add` would
-  // throw on the duplicate tag and leak an orphaned bootstrap dir. In-process
-  // chain (quick-chat is low-frequency, single-process); the `.catch` keeps a
-  // failed run from poisoning the gate forever.
+  // TODAY's chat workspace, by its daily tag (`chat-jun15`). A workspace someone
+  // happened to tag `chat-jun15` with a non-chat template doesn't count — the
+  // daily bucket is a chat-template workspace.
+  const findTodaysChat = (): WorkspaceMeta | undefined => {
+    const tag = todayChatTag();
+    return svc.registry.list().find((w) => w.template === QUICK_CHAT_TEMPLATE && w.tag === tag);
+  };
+
+  // Serializes quick-chat's find-or-create so two concurrent FIRST-OF-DAY
+  // launches don't both bootstrap today's workspace — the loser's `registry.add`
+  // would throw on the duplicate tag and leak an orphaned bootstrap dir.
+  // In-process chain (quick-chat is low-frequency, single-process); the `.catch`
+  // keeps a failed run from poisoning the gate forever.
   let chatWsGate: Promise<unknown> = Promise.resolve();
 
   const findOrCreateChatWorkspace = async (): Promise<
     { ok: true; meta: WorkspaceMeta } | { ok: false; status: number; body: { error: string; message?: string } }
   > => {
-    const existing = svc.registry.list().find((w) => w.template === QUICK_CHAT_TEMPLATE);
+    const existing = findTodaysChat();
     if (existing) return { ok: true, meta: existing };
     let created: Awaited<ReturnType<typeof svc.creator.create>>;
     try {
-      created = await svc.creator.create(freshChatTag(svc), QUICK_CHAT_TEMPLATE);
+      created = await svc.creator.create(todayChatTag(), QUICK_CHAT_TEMPLATE);
     } catch (err) {
-      // e.g. a concurrent create committed the tag between freshChatTag() and
-      // registry.add(). Re-find — the winner's workspace now exists.
-      const after = svc.registry.list().find((w) => w.template === QUICK_CHAT_TEMPLATE);
+      // e.g. a concurrent create committed today's tag first. Re-find — the
+      // winner's workspace now exists.
+      const after = findTodaysChat();
       if (after) return { ok: true, meta: after };
       launcherLogger.error('quick_chat.create_threw', { err });
       return { ok: false, status: 500, body: { error: 'create_failed', message: (err as Error).message } };
     }
     if (!created.ok) {
-      // tag_in_use means someone else created a chat workspace — re-find and reuse.
+      // tag_in_use means today's workspace was created concurrently — re-find it.
       if (created.code === 'tag_in_use') {
-        const after = svc.registry.list().find((w) => w.template === QUICK_CHAT_TEMPLATE);
+        const after = findTodaysChat();
         if (after) return { ok: true, meta: after };
       }
       const status =
@@ -478,8 +487,8 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
   });
 
   // Quick-chat launch — the "type a message → you're in" front door, decoupled
-  // from the multi-step create-workspace UI. Reuses (or, on first use, creates)
-  // the chat-template workspace, then spawns ONE fresh interactive session
+  // from the multi-step create-workspace UI. Enters TODAY's chat workspace
+  // (creating it on the day's first use), then spawns a fresh interactive session
   // seeded with the user's first message. One POST returns both the workspace
   // and the live session, so the client can drop the user straight into the TUI.
   // Body: { prompt: string; agent?: string }
@@ -499,12 +508,13 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
       return c.json({ error: 'bad_request', message: (err as Error).message }, 400);
     }
 
-    // Reuse the most-recent chat-template workspace; create one only if none
-    // exists. Create is heavy (bash + git + skill injection), so we never make a
-    // fresh workspace per message — the codebase's "heavy create once, cheap
-    // spawn many" pattern (sessions, not workspaces, carry conversations). The
-    // find-or-create runs through `chatWsGate` so concurrent first launches
-    // don't double-bootstrap.
+    // One chat workspace per DAY: enter today's if it exists, else create it.
+    // Each send is a new SESSION inside today's workspace (conversations =
+    // sessions, resumable from the chat sidebar) — closer to a traditional
+    // chatbot while staying aligned with the Workspace/Session model. Create is
+    // heavy (bash + git + skill injection) but happens at most once per day. The
+    // find-or-create runs through `chatWsGate` so concurrent first-of-day
+    // launches don't double-bootstrap.
     const run = chatWsGate.catch(() => undefined).then(() => findOrCreateChatWorkspace());
     chatWsGate = run;
     const target = await run;
