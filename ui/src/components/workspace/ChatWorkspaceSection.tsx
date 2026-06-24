@@ -181,7 +181,7 @@ export function ChatWorkspaceSection(): ReactElement | null {
             onDeleteSession={(sid) => ctx.requestDeleteSession(w.id, sid)}
             onConfigure={() => ctx.openAgentConfig(w.id)}
             onDelete={() => setPendingDelete(w)}
-            onSpawn={() => void ctx.spawn(w.id, { agent: w.agents[0] ?? 'claude' })}
+            onSpawn={() => openOrFocus({ kind: 'chat-landing', params: { targetWsId: w.id } })}
           />
         ))}
       </ul>

@@ -131,6 +131,8 @@ export const en = {
   chatLanding: {
     heading: 'What do you want to look into?',
     subheading: 'Ask Alice to research, analyze, or trade — your market data and tools are on tap.',
+    targetHeading: 'New session in this workspace',
+    targetSub: 'This conversation starts inside {{tag}} — pick a runtime and send.',
     placeholder: 'Ask Alice…',
     workspaceType: 'Chat',
     defaultAgent: 'Default',

@@ -120,6 +120,8 @@ export const ja: Resources = {
   chatLanding: {
     heading: '今日は何を調べますか？',
     subheading: 'Alice にリサーチ・分析・取引を依頼できます——マーケットデータとツールはすぐ使えます。',
+    targetHeading: 'このワークスペースで新規セッション',
+    targetSub: 'この会話は {{tag}} 内に作成されます——ランタイムを選んで送信してください。',
     placeholder: 'Alice に質問…',
     workspaceType: 'チャット',
     defaultAgent: 'デフォルト',
