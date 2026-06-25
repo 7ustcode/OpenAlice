@@ -128,6 +128,9 @@ export const zhHant: Resources = {
   chatLanding: {
     heading: '今天想研究什麼？',
     subheading: '讓 Alice 幫你研究、分析或交易——行情資料與工具都已就緒。',
+    targetHeading: '在此 workspace 中新建工作階段',
+    targetSub: '這段對話將在 {{tag}} 內建立——選個執行階段直接送出。',
+    clearTarget: '改為新對話',
     placeholder: '問 Alice…',
     workspaceType: '對話',
     defaultAgent: '預設',
